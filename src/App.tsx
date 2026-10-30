@@ -14,6 +14,7 @@ import { Report } from './pages/Report'
 import { Book } from './pages/Book'
 import { Profile } from './pages/Profile'
 import { NotFound } from './pages/NotFound'
+import { useUpdateAvailable } from './lib/pwa'
 
 function Gate() {
   const { status } = useAuth()
@@ -41,9 +42,21 @@ function Gate() {
   )
 }
 
+function UpdateBanner() {
+  const { available, update } = useUpdateAvailable()
+  if (!available) return null
+  return (
+    <div role="status" style={{ position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 50, display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--surface)', border: '1px solid var(--rule-strong)' }}>
+      <span>Nuova versione disponibile</span>
+      <button className="btn btn-p" onClick={update}>Aggiorna</button>
+    </div>
+  )
+}
+
 export function App() {
   return (
     <BrowserRouter>
+      <UpdateBanner />
       <AuthProvider>
         <Routes>
           <Route path="/auth/callback" element={<Callback />} />

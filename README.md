@@ -48,3 +48,12 @@ Home, Movimenti (con dettaglio, modifica e storno), Conti, dettaglio conto, Rico
 ## Non ancora fatto
 
 Movimenti previsti e ricorrenze, importazione estratti conto, report di confronto.
+
+## PWA (installazione)
+
+L'app è installabile: `vite-plugin-pwa` genera `manifest.webmanifest` (standalone, icone 192/512 e maskable in `public/`) e il service worker `sw.js`. Chrome propone «Installa app» (anche da **Account › App**) e l'icona si apre a schermo intero.
+
+- Il service worker precachea solo la shell e gli asset con hash; **API e `/auth-config.json` passano sempre dalla rete** (l'app funziona solo online).
+- Aggiornamenti: alla nuova versione compare il banner «Nuova versione disponibile · Aggiorna».
+- nginx serve `sw.js` e il manifest con `no-cache`.
+- Il service worker è attivo solo nella build di produzione; per provarlo: `npm run build && npm run preview`.
