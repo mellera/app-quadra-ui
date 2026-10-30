@@ -1,0 +1,81 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  APP_NAME: quadra
+  COMPONENT: ui
+  INFRA_APPS_REPO: mellera/infra-apps
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  build-and-deploy:
+    # solo su main: ogni push su main e' un deploy in produzione
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Nome dell'immagine (GHCR vuole minuscole)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VITE_API_URL=https://quadra-api.roger08.cloud
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Checkout di infra-apps
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.INFRA_APPS_REPO }}
+          ssh-key: ${{ secrets.INFRA_APPS_DEPLOY_KEY }}
+          path: infra-apps
+
+      - name: Aggiorna il tag dell'immagine (= deploy)
+        working-directory: infra-apps
+        run: |
+          yq -i ".${COMPONENT}.tag = \"${GITHUB_SHA}\"" "apps/${APP_NAME}/values.yaml"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "deploy(${APP_NAME}): ${COMPONENT} ${GITHUB_SHA::8} da ${GITHUB_REPOSITORY}"
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
