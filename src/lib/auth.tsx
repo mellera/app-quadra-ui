@@ -28,6 +28,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading')
   const [error, setError] = useState('')
   const mgr = useRef<UserManager | null>(null)
+  // Il manager nasce dopo il fetch di auth-config.json: chi lo usa (la callback) deve attenderlo.
+  const ready = useRef<{ promise: Promise<UserManager>; resolve: (m: UserManager) => void; reject: (e: unknown) => void } | null>(null)
+  if (!ready.current) {
+    let resolve!: (m: UserManager) => void
+    let reject!: (e: unknown) => void
+    const promise = new Promise<UserManager>((res, rej) => { resolve = res; reject = rej })
+    promise.catch(() => {}) // evita "unhandled rejection" se nessuno attende
+    ready.current = { promise, resolve, reject }
+  }
   const user = useRef<User | null>(null)
 
   useEffect(() => {
@@ -56,10 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         m.events.addUserUnloaded(() => { user.current = null; setStatus('anonymous') })
         m.events.addSilentRenewError(() => { user.current = null; setStatus('anonymous') })
         mgr.current = m
+        ready.current?.resolve(m)
         if (window.location.pathname !== '/auth/callback') setStatus('anonymous')
         else setStatus('loading')
       })
-      .catch(() => { if (alive) { setError('Configurazione di accesso non disponibile.'); setStatus('error') } })
+      .catch((e) => { if (alive) { ready.current?.reject(e); setError('Configurazione di accesso non disponibile.'); setStatus('error') } })
     return () => { alive = false }
   }, [])
 
@@ -76,7 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const finishLogin = useCallback(async () => {
     try {
-      const u = await mgr.current!.signinRedirectCallback()
+      const m = await ready.current!.promise
+      const u = await m.signinRedirectCallback()
       user.current = u
       setStatus('authenticated')
       return safeReturn(u.state)
